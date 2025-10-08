@@ -1,0 +1,11 @@
+# Dependencies for PST Reader
+# @author João Gbriel de Almeida
+
+# pypff/libpff may require prebuilt wheels on Windows.
+# The app can fallback to readpst (libpst) if pypff is unavailable.
+
+html2text>=2020.1.16
+# Optional HTML rendering inside Tkinter (not mandatory)
+tkhtmlview>=0.2.0; platform_system == "Windows"
+# Binary file type detection (pure Python, Windows-friendly)
+puremagic>=1.24
