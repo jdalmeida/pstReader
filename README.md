@@ -31,3 +31,6 @@ pyinstaller --noconsole --onefile src/main.py
 Observações:
 - Se `pypff` não estiver disponível, o app tentará usar `readpst` se encontrado no PATH.
 - Renderização de HTML é básica; por padrão converte HTML para texto simples. `tkhtmlview` é opcional.
+
+### Licença
+- Este projeto é distribuído sob a licença MIT. Veja o arquivo `LICENSE` para detalhes.

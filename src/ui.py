@@ -147,7 +147,13 @@ class AppUI:
             self.status_var.set("Pronto")
 
     def _on_about(self) -> None:
-        messagebox.showinfo("Sobre", "Leitor de PST em Python (Tkinter)")
+        messagebox.showinfo(
+            "Sobre",
+            "Leitor de PST em Python (Tkinter)\n\n"
+            "Autor: João Gbriel de Almeida\n"
+            "Licença: MIT\n"
+            "\nEste software é fornecido \"no estado em que se encontra\", sem garantias.",
+        )
 
     def _on_open_pst(self) -> None:
         path = filedialog.askopenfilename(title="Escolher arquivo PST", filetypes=[("Outlook PST", "*.pst"), ("Todos", "*.*")])
