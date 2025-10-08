@@ -20,8 +20,18 @@ class AppUI:
         self.root = root
         self.reader: Optional[PstReader] = None
 
+        # Tema ttk
+        try:
+            style = ttk.Style()
+            if "vista" in style.theme_names():
+                style.theme_use("vista")
+        except Exception:
+            pass
+
         self._build_menu()
+        self._build_toolbar()
         self._build_layout()
+        self._build_statusbar()
 
     def _build_menu(self) -> None:
         menu_bar = tk.Menu(self.root)
@@ -31,11 +41,23 @@ class AppUI:
         file_menu.add_command(label="Sair", command=self.root.quit)
         menu_bar.add_cascade(label="Arquivo", menu=file_menu)
 
+        action_menu = tk.Menu(menu_bar, tearoff=0)
+        action_menu.add_command(label="Exportar EML", command=self._export_selected_eml)
+        action_menu.add_command(label="Salvar Anexos", command=self._save_attachments)
+        menu_bar.add_cascade(label="Ações", menu=action_menu)
+
         help_menu = tk.Menu(menu_bar, tearoff=0)
         help_menu.add_command(label="Sobre", command=self._on_about)
         menu_bar.add_cascade(label="Ajuda", menu=help_menu)
 
         self.root.config(menu=menu_bar)
+
+    def _build_toolbar(self) -> None:
+        tb = ttk.Frame(self.root)
+        tb.pack(fill=tk.X, side=tk.TOP)
+        ttk.Button(tb, text="Abrir PST", command=self._on_open_pst).pack(side=tk.LEFT, padx=4, pady=2)
+        ttk.Button(tb, text="Exportar EML", command=self._export_selected_eml).pack(side=tk.LEFT, padx=4, pady=2)
+        ttk.Button(tb, text="Salvar Anexos", command=self._save_attachments).pack(side=tk.LEFT, padx=4, pady=2)
 
     def _build_layout(self) -> None:
         self.paned = ttk.Panedwindow(self.root, orient=tk.HORIZONTAL)
@@ -55,17 +77,19 @@ class AppUI:
         self.msg_list.heading("assunto", text="Assunto")
         self.msg_list.heading("remetente", text="Remetente")
         self.msg_list.heading("data", text="Data")
+        self.msg_list.column("assunto", width=400, anchor=tk.W)
+        self.msg_list.column("remetente", width=200, anchor=tk.W)
+        self.msg_list.column("data", width=150, anchor=tk.W)
         self.msg_list.pack(fill=tk.BOTH, expand=True)
         self.msg_list.bind("<<TreeviewSelect>>", self._on_message_selected)
+        self._build_msg_context_menu()
         self.paned.add(center_frame, weight=2)
 
         # Direita: preview + anexos
         right_frame = ttk.Frame(self.paned)
-        # Cabeçalhos breves
         self.header_text = tk.Text(right_frame, height=6, wrap=tk.WORD)
         self.header_text.pack(fill=tk.X)
 
-        # Corpo: HTML se disponível
         self.preview_container = ttk.Frame(right_frame)
         self.preview_container.pack(fill=tk.BOTH, expand=True)
         if HTMLLabel is not None:
@@ -77,7 +101,6 @@ class AppUI:
             self.text_preview = tk.Text(self.preview_container, wrap=tk.WORD)
             self.text_preview.pack(fill=tk.BOTH, expand=True)
 
-        # Anexos + ações
         attachments_bar = ttk.Frame(right_frame)
         attachments_bar.pack(fill=tk.X)
         ttk.Label(attachments_bar, text="Anexos:").pack(side=tk.LEFT)
@@ -96,6 +119,33 @@ class AppUI:
         self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Button(bottom, text="Aplicar", command=self._apply_search).pack(side=tk.LEFT)
 
+    def _build_statusbar(self) -> None:
+        sb = ttk.Frame(self.root)
+        sb.pack(fill=tk.X, side=tk.BOTTOM)
+        self.status_var = tk.StringVar(value="Pronto")
+        ttk.Label(sb, textvariable=self.status_var, anchor=tk.W).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+    def _build_msg_context_menu(self) -> None:
+        self.msg_menu = tk.Menu(self.root, tearoff=0)
+        self.msg_menu.add_command(label="Exportar EML", command=self._export_selected_eml)
+        self.msg_menu.add_command(label="Salvar Anexos", command=self._save_attachments)
+        self.msg_list.bind("<Button-3>", self._on_msg_right_click)
+
+    def _on_msg_right_click(self, event) -> None:
+        try:
+            row = self.msg_list.identify_row(event.y)
+            if row:
+                self.msg_list.selection_set(row)
+            self.msg_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.msg_menu.grab_release()
+
+    def _set_busy(self, busy: bool) -> None:
+        self.root.config(cursor="watch" if busy else "")
+        self.root.update_idletasks()
+        if not busy:
+            self.status_var.set("Pronto")
+
     def _on_about(self) -> None:
         messagebox.showinfo("Sobre", "Leitor de PST em Python (Tkinter)")
 
@@ -104,6 +154,8 @@ class AppUI:
         if not path:
             return
         try:
+            self._set_busy(True)
+            self.status_var.set("Abrindo PST...")
             self.reader = PstReader()
             self.reader.open(path)
             self._load_tree()
@@ -111,6 +163,8 @@ class AppUI:
             self._clear_preview()
         except Exception as exc:  # pragma: no cover
             messagebox.showerror("Erro ao abrir PST", str(exc))
+        finally:
+            self._set_busy(False)
 
     def _load_tree(self) -> None:
         if not self.reader:
@@ -140,6 +194,7 @@ class AppUI:
             return
         for msg in self.reader.list_messages(folder_id):
             self.msg_list.insert("", tk.END, iid=msg.id, values=(msg.subject, msg.sender, msg.date or ""))
+        self.status_var.set(f"{len(self.msg_list.get_children())} mensagem(ns)")
 
     def _on_message_selected(self, _event=None) -> None:
         if not self.reader:
@@ -148,10 +203,13 @@ class AppUI:
         if not selected:
             return
         msg_id = selected[0]
-        msg = self.reader.get_message(msg_id)
-        self._show_message(msg)
-        # carregar anexos
-        self._load_attachments(msg_id)
+        self._set_busy(True)
+        try:
+            msg = self.reader.get_message(msg_id)
+            self._show_message(msg)
+            self._load_attachments(msg_id)
+        finally:
+            self._set_busy(False)
 
     def _show_message(self, msg: PstEmail) -> None:
         self._clear_preview()
@@ -193,11 +251,34 @@ class AppUI:
         if not out_dir:
             return
         try:
+            self._set_busy(True)
+            self.status_var.set("Salvando anexos...")
             saved = self.reader.save_attachments(msg_id, out_dir)
         except Exception as exc:  # pragma: no cover
             messagebox.showerror("Salvar Anexos", str(exc))
             return
+        finally:
+            self._set_busy(False)
         messagebox.showinfo("Salvar Anexos", f"{len(saved)} anexo(s) salvo(s).")
+
+    def _export_selected_eml(self) -> None:
+        if not self.reader:
+            return
+        selected = self.msg_list.selection()
+        if not selected:
+            return
+        msg_id = selected[0]
+        path = filedialog.asksaveasfilename(title="Salvar como .eml", defaultextension=".eml", filetypes=[("EML", "*.eml"), ("Todos", "*.*")])
+        if not path:
+            return
+        try:
+            self._set_busy(True)
+            self.status_var.set("Exportando EML...")
+            self.reader.export_eml(msg_id, path)
+        except Exception as exc:  # pragma: no cover
+            messagebox.showerror("Exportar EML", str(exc))
+        finally:
+            self._set_busy(False)
 
     def _apply_search(self) -> None:
         term = (self.search_var.get() or "").strip().lower()
@@ -210,6 +291,7 @@ class AppUI:
             blob = " ".join([msg.subject or "", msg.sender or "", (msg.body_text or ""), (msg.body_html or "")]).lower()
             if term in blob:
                 self.msg_list.insert("", tk.END, iid=msg.id, values=(msg.subject, msg.sender, msg.date or ""))
+        self.status_var.set(f"{len(self.msg_list.get_children())} resultado(s)")
 
     def _clear_messages(self) -> None:
         self.msg_list.delete(*self.msg_list.get_children())
